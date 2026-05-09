@@ -6,6 +6,8 @@ urls:
     epg_segment: "https://static.spark.ziggogo.tv/eng/web/epg-service-lite/nl/nl/events/segments/{}"
     # epg_detail: URL where the details for each program are grabbed from. Must have exactly 1 '{}' entry where the program ID is filed in.
     epg_detail: "https://prod.spark.ziggogo.tv/eng/web/linear-service/v2/replayEvent/{}?returnLinearContent=true&language=nl"
-
+    # epg_img_detail: URL where image poster is located from epg_detail using imageVersion and crid.
+    # epg_img_detail: "https://staticqbr-nl-prod.prod.cdn.dmdsdp.com/image-service/intent/{}/posterTile?imageVersion={}&w=400"
+    epg_img_detail: "https://staticqbr-prod-nl.gnp.cloud.ziggogo.tv/image-service/intent/{}/posterTile?imageVersion={}&w=400"
 # Timezone that should be used for the XMLTV file
 timezone: "Europe/Amsterdam"

@@ -79,6 +79,7 @@ class ZiggoGoEpgGrabber:
             self._epg_channel_list_url = configuration["urls"]["epg_channel_list"]
             self._epg_segment_url = configuration["urls"]["epg_segment"]
             self._epg_detail_url = configuration["urls"]["epg_detail"]
+            self._epg_img_detail_url = configuration["urls"]["epg_img_detail"]
         except KeyError:
             raise GrabException(f"Configuration file {configuration_file} is missing the settings for the urls to grab")
 
@@ -132,6 +133,19 @@ class ZiggoGoEpgGrabber:
             )
         """
         )
+        self._dbcur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """
+        )
+        self._dbcur.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_programmedetails_id ON programmedetails (id)
+        """
+        )
 
     def __del__(self):
         """Cleanup"""
@@ -151,7 +165,17 @@ class ZiggoGoEpgGrabber:
             self._grab_programmedetails()
 
             logging.info("Cleaning up database...")
-            self._dbcur.execute("VACUUM")
+            row = self._dbcur.execute("SELECT value FROM metadata WHERE key = 'last_vacuum'").fetchone()
+            last_vacuum = int(row[0]) if row else 0
+            days_since_vacuum = (self._grab_start_time - last_vacuum) / 86400
+            if days_since_vacuum >= 7:
+                logging.info("Running weekly VACUUM...")
+                self._dbcur.execute("VACUUM")
+                self._dbcur.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('last_vacuum', ?)", (str(self._grab_start_time),))
+                self._db.commit()
+            else:
+                logging.info(f"Skipping VACUUM, last run {days_since_vacuum:.1f} days ago.")
+                self._dbcur.execute("PRAGMA incremental_vacuum")
         else:
             logging.info("Generate only: skip grabbing new EPG data")
 
@@ -232,8 +256,8 @@ class ZiggoGoEpgGrabber:
         logging.info("Getting guide overview data...")
 
         # Determine start point using UTC time as segment codes are in UTC
-        grab_start = datetime.datetime.utcfromtimestamp(self._grab_start_time)
-        segment_datetime = datetime.datetime(year=grab_start.year, month=grab_start.month, day=grab_start.day)
+        grab_start = datetime.datetime.fromtimestamp(self._grab_start_time, tz=datetime.timezone.utc)
+        segment_datetime = datetime.datetime(year=grab_start.year, month=grab_start.month, day=grab_start.day, tzinfo=datetime.timezone.utc)
         end_datetime = segment_datetime + datetime.timedelta(days=self._scan_days)
 
         # Set up session with automatic retries
@@ -302,7 +326,7 @@ class ZiggoGoEpgGrabber:
 
                 if programmeupdate:
                     self._dbcur.executemany(
-                        "INSERT OR REPLACE INTO programmes (id, channelid, last_update, title, starttime, endtime)"
+                        "INSERT OR REPLACE INTO programmes (id, channelid, last_update, title, starttime, endtime) "
                         "VALUES (:id, :channelid, :last_update, :title, :starttime, :endtime)",
                         programmeupdate,
                     )
@@ -366,6 +390,9 @@ class ZiggoGoEpgGrabber:
                     details["desc"] = programmedata["longDescription"]
                 elif "shortDescription" in programmedata:
                     details["desc"] = programmedata["shortDescription"]
+                if "imageVersion" in programmedata and "eventId" in programmedata:
+                    details["img"] = self._epg_img_detail_url.format(programmedata["eventId"], programmedata["imageVersion"])
+
 
                 credits = {}
                 if "actors" in programmedata:

@@ -12,6 +12,51 @@ Even though ZiggoGo EPG is optimized, it is not recommended to run this program 
 generation is desired (for example, for testing purposes), use the `--generate-only` flag. See the [Usage](#usage) section for
 more details.
 
+> **This is a fork of [jbogers/ziggogo-epg](https://github.com/jbogers/ziggogo-epg)** with several bug fixes, performance
+> improvements and a full Dutch-to-DVB genre mapping for TVHeadend and Plex. See the [Changes](#changes) section for details.
+
+## Changes
+
+The following changes have been made compared to the original repository:
+
+### Bug fixes
+
+- **Correct Dutch poster URL** (`ziggo-nl.yml`): The `epg_img_detail` URL was pointing to a Polish UPC server
+  (`upctv.pl`) instead of the correct Dutch Ziggo server (`ziggogo.tv`).
+- **Correct poster URL construction** (`ziggoepggrabber.py`): The poster URL was being built using the internal programme
+  `id` instead of the `eventId` (which contains the full `crid+imi` string required by the image service). The code now
+  also checks that `eventId` is present before attempting to build the URL.
+- **Missing space in SQL INSERT statement** (`ziggoepggrabber.py`): A missing space between two string literals caused
+  the SQL query to be malformed (`...endtime)VALUES...`), which would crash on first use.
+- **Deprecated `utcfromtimestamp`** (`ziggoepggrabber.py`): Replaced the deprecated
+  `datetime.datetime.utcfromtimestamp()` (removed in Python 3.12) with the timezone-aware
+  `datetime.datetime.fromtimestamp(..., tz=datetime.timezone.utc)`.
+- **`season`/`episode` type inconsistency** (`xmltvwriter.py`): `season` and `episode` were initialised as empty
+  strings `""` but set to integers after a successful `int()` conversion. This made the `!= ""` comparison unreliable.
+  Both are now initialised as `None` and checked with `is not None`, and the `xmltv_ns` episode string is built
+  correctly for cases where only one of the two values is known.
+
+### Performance improvements
+
+- **Database index** (`ziggoepggrabber.py`): Added `CREATE INDEX IF NOT EXISTS` on the `programmedetails` table to
+  speed up the `LEFT JOIN` that is executed on every run.
+- **Metadata table for VACUUM scheduling** (`ziggoepggrabber.py`): The `VACUUM` operation (which rebuilds the entire
+  database) was previously run after every single grab. It is now only run once every 7 days, tracked via a new
+  `metadata` table in the database. On other days, `PRAGMA incremental_vacuum` is used instead. The 7-day interval is
+  measured from the last actual VACUUM, so it works correctly regardless of how often or how irregularly the script runs.
+- **Timezone-aware `segment_datetime`** (`ziggoepggrabber.py`): The `segment_datetime` used for building EPG segment
+  URLs is now explicitly UTC-aware, consistent with the `grab_start` datetime it is derived from.
+
+### Genre mapping
+
+- **Full Dutch-to-DVB genre mapping** (`xmltvwriter.py`): Implemented the category translation that was listed as a
+  TODO in the original repository. All Dutch genre names returned by the Ziggo API are now mapped to their official
+  DVB/ETSI EN 300 468 English equivalents (e.g. `Paardensport` → `Equestrian`, `Voetbal` → `Football / Soccer`).
+  The original Dutch category is preserved as a separate `<category lang="nl">` tag, and the DVB category is added as
+  an additional `<category lang="en">` tag. This ensures correct genre display in both TVHeadend and Plex (via the
+  TVHeadend tuner integration). The mapping covers all 100+ genres returned by the Ziggo API, verified against the
+  live cache database.
+
 ## TVHeadend mode
 
 In this mode, TVHeadend will be asked to provide a list of known TV channels. The script will try to match these up to the
@@ -30,110 +75,77 @@ as the input file.
 
 ## Requirements
 
-Python 3.6+ is required to run this script. In addition, some external Pyton packages are used. These are listed in the
+Python 3.6+ is required to run this script. In addition, some external Python packages are used. These are listed in the
 `requirements.txt` file. You can easily install these packages using the following command:
-```shell
-pip install -r requirements.txt
-```
+
+    pip install -r requirements.txt
 
 ## Usage
 
 For a quick overview of all available options, run:
-```shell
-./ziggogoepg.py --help
-```
+
+    ./ziggogoepg.py --help
 
 ZiggoGo EPG supports the following basic options:
+
 - `-h`, `--help`: Opens the program help and exits.
 - `-s`, `--configuration`: Select the configuration to use. The default configuration is `ziggo-nl`. Currently supported
-  configurations are (see also [Adding configurations](adding-configurations)):
-  - `upc-pl`
-  - `ziggo-nl`
+configurations are (see also [Adding configurations](#adding-configurations)):
+  * `upc-pl`
+  * `ziggo-nl`
 - `-n`, `--scan-days`: Set the number of days to scan from the ZiggoGo servers. The default of 14 is the current maximum of
-  the servers. To reduce grabbing time, memory use and storgae requirements, this value can be lowered.
+the servers. To reduce grabbing time, memory use and storage requirements, this value can be lowered.
 - `-f`, `--file-mode`: Runs the grabber in file mode instead of the default TVHeadend mode. See the
-  [TVHeadend mode](#tvheadend-mode) and [Standalone mode](#standalone-mode) sections for a detailed explanation.
+[TVHeadend mode](#tvheadend-mode) and [Standalone mode](#standalone-mode) sections for a detailed explanation.
 
 The following options are supported in TVHeadend mode:
-- `--tvh-host`: Give the hostname of the TVHeadend server. Defaults to `localhost`, which should be safe as writing the XMLTV file
-  can normally only be done on the local machine (unless you are using a networked file system).
-- `--tvh-port`: Give the port number of the TVHeadand server. Defaults to `9981`, which should normally work unless you configured
-  TVHeadend to run on a different port.
-- `--tvh-username`: The username to use for connecting to TVHeadend. This can (and should) be a user with limited access.
+
+- `--tvh-host`: Give the hostname of the TVHeadend server. Defaults to `localhost`.
+- `--tvh-port`: Give the port number of the TVHeadend server. Defaults to `9981`.
+- `--tvh-username`: The username to use for connecting to TVHeadend.
 - `--tvh-password`: The password to use for connecting to TVHeadend. Note that this password can be seen on the command line.
-- `--tvh-socket SOCKET`: The path to xmltv socket of TVHeadend, used to write the XMLTV data. Defaults to
-  `/home/hts/.hts/tvheadend/epggrab/xmltv.sock` which should work for any installation that installed TVHeadend under the
-  recommended system user. Note that this socket file _only_ exists if the XMLTV grabber was enabled in TVHeadend.
+- `--tvh-socket SOCKET`: The path to the xmltv socket of TVHeadend. Defaults to
+  `/home/hts/.hts/tvheadend/epggrab/xmltv.sock`.
 
 The following options are supported in standalone file mode:
-- `--channel-file`: Sets the filename of the file to read (or write, see `--write-channel-list`) the channel list from. This can
-  be only a filename or a full path. Defaults to `channels.txt`.
-- `-c`, `--channel`: Can be used instead of the `--channel-file` option to give a specific channel to grab on the command line.
-  The option can be repeated multiple times to specify multiple channels (but in that case, using the `--channel-file` is
-  _highly_ recommended).
-- `--write-channel-list`: If given the currently known channels are retrieved from the ZiggoGo servers and are output to the file
-  specified by the `--channel-file` option. No EPG data will be grabbed and no XMLTV file will be generated. This is option is
-  useful when first starting with the standalone file mode as this gives a known-good channels file to start your configuration
-  with. It is recommended to first edit this file, removing any unwanted channels, before starting normal use of the
-  standalne file mode. **Warning**: Using this option will overwrite any existing file at the location of `--channel-file`!
 
-The following options are tweaks that can be used by advanced users:
-- `--timezone`: All start and stop (end) times in the XMLTV file have a timezone associated with them. By default
-  the timezone from the confifuration file is used as it is most appropriate for your EPG. And your TV software should be
-  able to handle this timezone without any issue. However, if you TV software has issues, you can try other timezones. You can
-  choose most of the timezones listed on https://en.wikipedia.org/wiki/List_of_tz_database_time_zones, with 'UTC' being your best
-  bet in case of issues. Note that timezone assignment and translation is done by the `pytz` library, so if this library is kept
-  up to date you should experience no timezone issues.
-- `--database-location`: By default the `ziggoepg_cache.sqlite` file is stored in the working directory of the script. Should you
-  desire a different location (for example, a file system that is better suited to handle a database file), an alternative path
-  (but not filename) can be specified here.
-- `--generate-only`: Great for testing the export of the XMLTV data. No contact is made with the ZiggoGo servers, the XMLTV
-  generation is done fully from the existing `ziggoepg_cache.sqlite` file. Any useful application of this mode requires ZiggoGo
-  EPG to have run in a normal mode at least once before. Note that this option is ignored if the `--write-channel-list` option
-  is used. Note that the `--channel-file`, `-c` or changing available channels in TVHeadand has no effect on the output of this
-  option (these options control updating of the `ziggoepg_cache.sqlite` file only).
+- `--channel-file`: Sets the filename of the file to read (or write) the channel list from. Defaults to `channels.txt`.
+- `-c`, `--channel`: Can be used instead of `--channel-file` to give a specific channel on the command line.
+- `--write-channel-list`: Retrieves the currently known channels and writes them to the file specified by `--channel-file`.
+  No EPG data will be grabbed. **Warning**: This will overwrite any existing file at that location.
+
+The following options are supported by advanced users:
+
+- `--timezone`: The timezone used for start and stop times in the XMLTV file. Defaults to the timezone in the configuration
+  file. See <https://en.wikipedia.org/wiki/List_of_tz_database_time_zones> for valid values.
+- `--database-location`: Alternative path (not filename) for the `ziggoepg_cache.sqlite` cache database.
+- `--generate-only`: Generates XMLTV output from the existing cache without contacting the ZiggoGo servers. Useful for
+  testing.
 
 ## Adding configurations
 
 Configuration files are stored with the ZiggoGo EPG program in `.yml` (YAML) files. To create a new configuration it is easiest
-to copy an existing one and name it accordingly for your region. In the configuration file, you can adjust the URL's used to
-grab the EPG data from and set an appropriate timezone for the resulting XMLTV file. Note that this grabber only works with
-systems from Ziggo/UPC/Liberty Global and you will have to figure out the URL's yourself by observing the network traffic of
-the online viewing application from your local provider.
+to copy an existing one and name it accordingly for your region. In the configuration file, you can adjust the URLs used to
+grab the EPG data and set an appropriate timezone for the resulting XMLTV file. Note that this grabber only works with
+systems from Ziggo/UPC/Liberty Global.
 
 The following configuration options are available:
-- `urls`
-  - `epg_channel_list`: The URL where the grabber can get the currently supported channel list from the online viewer. This gives
-    the grabber the information it needs to map TV channel names to the internal ID's used by the EPG service.
-  - `epg_segment`: The URL where the grabber can get the program overview segments. Typically, these are 6-hour segments that
-    contain an overview of all programs broadcast during that period. The URL must have exactly one `{}` entry, which is to be
-    placed in the location of the URL where the segment id is normally placed. A segment id looks like a datetime without any
-    spacing or symbols (eg. 2022-03-11, 00:00:00 becomes `20220311000000`, which is automatically generated by the grabber in
-    place of the `{}` entry).
-  - `epg_detail`: The URL where the grabber can get the program details from each individual program. The URL must have exactly
-    one `{}` entry, which is to be placed in the location of the URL where the program id is normally placed. A program id is a
-    long string that is associated with the program. This value can be seen both in the segment data and from observing the URL
-    called by the online viewing application from your local provider.
-- `timezone`: The timezone that is used for creating program entries in the XMLTV file. This timezone must be supported by
-  `pytz`. See the explanation of the `--timezone` option for what is allowed here.
 
-After creating the configuration, place it in the ziggogo-epg application location and call `ziggogoepg.py` with the
-`-s`/`--configuration` option, where the value is the name ofthe file without the `.yml` extension (for example, to use
-`upc-pl.yml`, you would call `ziggogoepg.py` with the option `-s upc-pl`).
+- `urls`
+  * `epg_channel_list`: The URL where the grabber can get the channel list.
+  * `epg_segment`: The URL for program overview segments. Must contain exactly one `{}` placeholder for the segment id.
+  * `epg_detail`: The URL for individual program details. Must contain exactly one `{}` placeholder for the program id.
+  * `epg_img_detail`: The URL for program poster images. Must contain exactly two `{}` placeholders: the first for the
+    `eventId` (the full `crid+imi` string) and the second for the `imageVersion`.
+- `timezone`: The timezone used for XMLTV program entries. Must be supported by `pytz`.
 
 ## Acknowledgments
 
-Inspiration for the script has been taken from https://github.com/beralt/horepg. While all code is new, some operational ideas
-(like automatic channel matching with TvHeaded) came from this project.
+Inspiration for the script has been taken from <https://github.com/beralt/horepg>. While all code is new, some operational
+ideas (like automatic channel matching with TVHeadend) came from this project.
 
 Thank you [Beralt](https://github.com/beralt) for your hard work on [horepg](https://github.com/beralt/horepg)!
 
 Also thanks to:
+
 - [ldymek](https://github.com/ldymek) for providing the configuration information for `upc-pl`.
-
-## TODO's
-
-- Add a setup.cfg/setup.py file to make the program installable as a Python module for the people who perfer that run mode.
-- Implement an optional category translation similar to 'https://github.com/beralt/horepg/blob/master/horepg/xmltvdoc.py' in 
-  XMLTVWriter to have proper category mapping in TVHeadend.
-  - Translated categories should be additionally added as the original data may be applicable for other applications.

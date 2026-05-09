@@ -14,6 +14,140 @@ from lxml import etree
 class XMLTVWriter:
     """Write XMLTV data from database"""
 
+    GENRE_MAP = {
+        # Film
+        "Film": "Movie / Drama",
+        "Actie": "Adventure / Western / War",
+        "Avontuur": "Adventure / Western / War",
+        "Animatie": "Cartoons / Puppets",
+        "Anime": "Cartoons / Puppets",
+        "Komedie": "Comedy",
+        "Romantische komedie": "Comedy",
+        "Standup komedie": "Comedy",
+        "Zwarte komedie": "Comedy",
+        "Sitcoms": "Comedy",
+        "Documentaire": "Documentary",
+        "Docudrama": "Documentary",
+        "Docusoap": "Documentary",
+        "Drama": "Movie / Drama",
+        "Dramaseries": "Movie / Drama",
+        "Historisch drama": "Serious / Classical / Religious / Historical movie / Drama",
+        "Misdaaddrama": "Detective / Thriller",
+        "Miniseries": "Movie / Drama",
+        "Fantasy": "Science fiction / Fantasy / Horror",
+        "Sciencefiction": "Science fiction / Fantasy / Horror",
+        "Horror": "Science fiction / Fantasy / Horror",
+        "Thriller": "Detective / Thriller",
+        "Mysterie": "Detective / Thriller",
+        "Misdaad": "Detective / Thriller",
+        "Romantiek": "Romance",
+        "Western": "Adventure / Western / War",
+        "Oorlog": "Adventure / Western / War",
+        "Musical": "Musical / Opera",
+        "Biografie": "Documentary",
+        # Nieuws & Actualiteit
+        "Nieuws": "News / Current affairs",
+        "Actualiteit": "News / Current affairs",
+        "Actualiteitenprogramma's": "News / Current affairs",
+        "Debat": "Discussion / Interview / Debate",
+        "Politiek": "Social / Political issues / Economics",
+        "Politieke satire": "Social / Political issues / Economics",
+        "Interview": "Discussion / Interview / Debate",
+        "Business & Financial": "News / Current affairs",
+        "Weer": "News / Weather report",
+        # Sport
+        "Sport": "Sports",
+        "Voetbal": "Football / Soccer",
+        "American football": "Team sports (excluding football)",
+        "Basketbal": "Team sports (excluding football)",
+        "Tennis": "Tennis / Squash",
+        "Golf": "Sports",
+        "Atletiek": "Athletics",
+        "Wielrennen": "Sports",
+        "Motorsport": "Motor sport",
+        "Motorracen": "Motor sport",
+        "Rugby": "Team sports (excluding football)",
+        "Rugby League": "Team sports (excluding football)",
+        "Rugby Union": "Team sports (excluding football)",
+        "Honkbal": "Team sports (excluding football)",
+        "Cricket": "Team sports (excluding football)",
+        "Volleybal": "Team sports (excluding football)",
+        "Darts": "Sports",
+        "Snooker": "Sports",
+        "Paardensport": "Equestrian",
+        "Zeilen": "Water sport",
+        "Skateboarden": "Sports",
+        "Extreme sporten": "Sports",
+        "Vliegsport": "Sports",
+        "Mixed Martial Arts (MMA)": "Martial sports",
+        "Running": "Athletics",
+        "Stierenvechten": "Sports",
+        "Cheerleading": "Sports",
+        "Competitiesporten": "Sports",
+        "Multisportevenement": "Special events (Olympic Games; World Cup; etc.)",
+        "Sporttalkshow": "Sports magazines",
+        "Exercise": "Fitness and health",
+        "Outdoor": "Sports",
+        # Kinderen
+        "Kinderen": "Children's / Youth programs",
+        "Kids en familie": "Children's / Youth programs",
+        # Muziek
+        "Muziek": "Music / Ballet / Dance",
+        "Ballet": "Ballet",
+        "Dans": "Music / Ballet / Dance",
+        "Opera": "Musical / Opera",
+        "Podiumkunsten": "Performing arts",
+        "Awards": "Music / Ballet / Dance",
+        # Kunst & Cultuur
+        "Beeldende kunst": "Fine arts",
+        "Kunstnijverheid": "Handicraft",
+        "Boeken & literatuur": "Literature",
+        "Religie": "Religion",
+        "Geschiedenis": "Documentary",
+        "Bloemlezing": "Arts / Culture (without music)",
+        # Sociale & Maatschappelijke onderwerpen
+        "Samenleving": "Social / Political issues / Economics",
+        "Educatie": "Informational / Educational / School programs",
+        "Wetenschap": "Education / Science / Factual topics",
+        "Natuur": "Nature / Animals / Environment",
+        "Natuur en milieu": "Nature / Animals / Environment",
+        "Technologie": "Technology / Natural sciences",
+        "Dieren": "Nature / Animals / Environment",
+        "Gezondheid": "Medicine / Physiology / Psychology",
+        "Medisch": "Medicine / Physiology / Psychology",
+        "Opvoeden": "Informational / Educational / School programs",
+        "LHBTI": "Social / Political issues / Economics",
+        "Recht": "Social / Political issues / Economics",
+        "Paranormaal": "Detective / Thriller",
+        "Landbouw": "Nature / Animals / Environment",
+        # Lifestyle
+        "Reizen": "Tourism / Travel",
+        "Culinair": "Cooking",
+        "Mode": "Fashion",
+        "Bouwen en verbouwen": "Leisure hobbies",
+        "Doe-het-zelf": "Leisure hobbies",
+        "Home & Garden": "Gardening",
+        "Shoppen": "Advertisement / Shopping",
+        "Verzamelen": "Leisure hobbies",
+        "Veiling": "Advertisement / Shopping",
+        "Auto's": "Motoring",
+        "Motors": "Motoring",
+        # Entertainment & Shows
+        "Gamen": "Game show / Quiz / Contest",
+        "Entertainment": "Show / Game show",
+        "Variété": "Variety show",
+        "Spelshow": "Game show / Quiz / Contest",
+        "Talkshow": "Talk show",
+        "Reality": "Variety show",
+        "Reality-competitie": "Game show / Quiz / Contest",
+        "Event": "Show / Game show",
+        "Consumentenprogramma's": "Show / Game show",
+        "Soap": "Soap / Melodrama / Folkloric",
+        "Erotiek": "Adult movie / Drama",
+        "Erotisch": "Adult movie / Drama",
+    }
+
+
     def __init__(self, database_connection: sqlite3.Connection):
         """
         Initialize XMLTVWriter.
@@ -102,15 +236,17 @@ class XMLTVWriter:
                     etree.SubElement(programme, "date").text = details["date"]
 
                 if "categories" in details:
-                    # TODO: Offer translation option that adds DVB-EPG compatible types
                     for category in details["categories"]:
                         etree.SubElement(programme, "category", attrib={"lang": self._lang}).text = category
+                        dvb_code = self.GENRE_MAP.get(category)
+                        if dvb_code:
+                            etree.SubElement(programme, "category", attrib={"lang": "en"}).text = dvb_code
 
                 if "country" in details:
                     etree.SubElement(programme, "country").text = details["country"]
 
                 if "episode" in details:
-                    season = ""
+                    season = None
                     ziggo_internal_id = False
                     try:
                         season = int(details["episode"]["season"]) - 1
@@ -120,7 +256,7 @@ class XMLTVWriter:
                     except (KeyError, ValueError):
                         # No season value or not an integer
                         pass
-                    episode = ""
+                    episode = None
                     try:
                         episode = int(details["episode"]["episode"]) - 1
                         if episode >= 9999999:
@@ -129,8 +265,13 @@ class XMLTVWriter:
                     except (KeyError, ValueError):
                         # No season value or not an integer
                         pass
-                    if not ziggo_internal_id and (season != "" or episode != ""):
-                        etree.SubElement(programme, "episode-num", attrib={"system": "xmltv_ns"}).text = f"{season}.{episode}."
+                    if not ziggo_internal_id and (season is not None or episode is not None):
+                        season_str = str(season) if season is not None else ""
+                        episode_str = str(episode) if episode is not None else ""
+                        etree.SubElement(programme, "episode-num", attrib={"system": "xmltv_ns"}).text = f"{season_str}.{episode_str}."
+                
+                if "img" in details:
+                    etree.SubElement(programme, "icon", attrib={"src": details["img"]})
 
                 if "rating" in details:
                     rating = etree.SubElement(programme, "rating", attrib={"system": "Kijkwijzer"})
