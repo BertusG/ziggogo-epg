@@ -14,6 +14,58 @@ from lxml import etree
 class XMLTVWriter:
     """Write XMLTV data from database"""
 
+    DVB_PRIORITY = {
+        # Subcategorie: Hoofdcategorie (subcategorie wint)
+        "Detective / Thriller": "Movie / Drama",
+        "Adventure / Western / War": "Movie / Drama",
+        "Science fiction / Fantasy / Horror": "Movie / Drama",
+        "Comedy": "Movie / Drama",
+        "Soap / Melodrama / Folkloric": "Movie / Drama",
+        "Romance": "Movie / Drama",
+        "Serious / Classical / Religious / Historical movie / Drama": "Movie / Drama",
+        "Adult movie / Drama": "Movie / Drama",
+        "Talk show": "Show / Game show",
+        "Game show / Quiz / Contest": "Show / Game show",
+        "Variety show": "Show / Game show",
+        "Football / Soccer": "Sports",
+        "Team sports (excluding football)": "Sports",
+        "Individual sports": "Sports",
+        "Athletics": "Sports",
+        "Motor sport": "Sports",
+        "Water sport": "Sports",
+        "Equestrian": "Sports",
+        "Martial sports": "Sports",
+        "Sports magazines": "Sports",
+        "Fitness and health": "Sports",
+        "Special events (Olympic Games; World Cup; etc.)": "Sports",
+        "News / Weather report": "News / Current affairs",
+        "Discussion / Interview / Debate": "News / Current affairs",
+        "Ballet": "Music / Ballet / Dance",
+        "Rock / Pop": "Music / Ballet / Dance",
+        "Musical / Opera": "Music / Ballet / Dance",
+        "Performing arts": "Arts / Culture",
+        "Fine arts": "Arts / Culture",
+        "Religion": "Arts / Culture",
+        "Popular culture / Traditional arts": "Arts / Culture",
+        "Literature": "Arts / Culture",
+        "Handicraft": "Arts / Culture",
+        "Fashion": "Arts / Culture",
+        "Motoring": "Arts / Culture",
+        "Tourism / Travel": "Arts / Culture",
+        "Cooking": "Arts / Culture",
+        "Gardening": "Arts / Culture",
+        "Leisure hobbies": "Arts / Culture",
+        "Advertisement / Shopping": "Arts / Culture",
+        "Education / Science / Factual topics": "Social / Political issues / Economics",
+        "Nature / Animals / Environment": "Social / Political issues / Economics",
+        "Technology / Natural sciences": "Social / Political issues / Economics",
+        "Medicine / Physiology / Psychology": "Social / Political issues / Economics",
+        "Economics / Social advisory": "Social / Political issues / Economics",
+        "Remarkable people": "Social / Political issues / Economics",
+        "Informational / Educational / School programs": "Social / Political issues / Economics",
+        "Magazines / Reports / Documentary": "Social / Political issues / Economics",
+    }
+
     GENRE_MAP = {
         # Film
         "Film": "Movie / Drama",
@@ -236,11 +288,22 @@ class XMLTVWriter:
                     etree.SubElement(programme, "date").text = details["date"]
 
                 if "categories" in details:
+                    # Verzamel alle DVB codes
+                    dvb_codes = set()
                     for category in details["categories"]:
-                        etree.SubElement(programme, "category", attrib={"lang": self._lang}).text = category
                         dvb_code = self.GENRE_MAP.get(category)
                         if dvb_code:
-                            etree.SubElement(programme, "category", attrib={"lang": "en"}).text = dvb_code
+                            dvb_codes.add(dvb_code)
+                    # Verwijder hoofdcategorieen als subcategorie aanwezig is
+                    to_remove = set()
+                    for code in dvb_codes:
+                        parent = self.DVB_PRIORITY.get(code)
+                        if parent and parent in dvb_codes:
+                            to_remove.add(parent)
+                    dvb_codes -= to_remove
+                    # Schrijf alleen de meest specifieke categorie weg (maximaal 1)
+                    if dvb_codes:
+                        etree.SubElement(programme, "category", attrib={"lang": "en"}).text = next(iter(dvb_codes))
 
                 if "country" in details:
                     etree.SubElement(programme, "country").text = details["country"]
