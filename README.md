@@ -35,6 +35,10 @@ The following changes have been made compared to the original repository:
   strings `""` but set to integers after a successful `int()` conversion. This made the `!= ""` comparison unreliable.
   Both are now initialised as `None` and checked with `is not None`, and the `xmltv_ns` episode string is built
   correctly for cases where only one of the two values is known.
+- **Genre category accumulation** (`xmltvwriter.py`): TVHeadend accumulates genre categories on repeated EPG updates
+  rather than replacing them. This was especially noticeable for programmes broadcast multiple times per week. Fixed by
+  writing at most one `<category lang="en">` tag per programme, selecting the most specific DVB subcategory via a
+  priority map (`DVB_PRIORITY`). This prevents unbounded genre accumulation across daily scraper runs.
 
 ### Performance improvements
 
@@ -52,10 +56,15 @@ The following changes have been made compared to the original repository:
 - **Full Dutch-to-DVB genre mapping** (`xmltvwriter.py`): Implemented the category translation that was listed as a
   TODO in the original repository. All Dutch genre names returned by the Ziggo API are now mapped to their official
   DVB/ETSI EN 300 468 English equivalents (e.g. `Paardensport` → `Equestrian`, `Voetbal` → `Football / Soccer`).
-  The original Dutch category is preserved as a separate `<category lang="nl">` tag, and the DVB category is added as
-  an additional `<category lang="en">` tag. This ensures correct genre display in both TVHeadend and Plex (via the
-  TVHeadend tuner integration). The mapping covers all 100+ genres returned by the Ziggo API, verified against the
+  A single `<category lang="en">` tag with the most specific DVB subcategory is written per programme, verified against
+  TVHeadend's internal genre list. The mapping covers all 100+ genres returned by the Ziggo API, verified against the
   live cache database.
+
+### API URL updates
+
+- **Updated Ziggo API endpoints** (`ziggo-nl.yml`): The Ziggo API endpoints changed. Updated `epg_channel_list`,
+  `epg_segment` and `epg_detail` URLs to the new endpoints (`spark-prod-nl.gnp.cloud.ziggogo.tv` and
+  `staticqbr-prod-nl.gnp.cloud.ziggogo.tv`).
 
 ## TVHeadend mode
 
